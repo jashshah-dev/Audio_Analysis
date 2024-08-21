@@ -5,5 +5,5 @@ langchain
 PyPDF2
 chromadb
 faiss-cpu
-speech_recognition
+SpeechRecognition
 pydub
