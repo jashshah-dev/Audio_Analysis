@@ -89,7 +89,11 @@ def main():
 
     if uploaded_file:
         st.write("Transcribing the audio file...")
-        transcribed_text = speech_to_text(uploaded_file)
+
+        # Show a spinner while the transcription is in progress
+        with st.spinner('Transcription in progress... This may take a while for larger files.'):
+            transcribed_text = speech_to_text(uploaded_file)
+        
         st.subheader("Transcribed Text")
         st.write(transcribed_text)
 
