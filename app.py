@@ -107,7 +107,10 @@ def main():
     uploaded_file = st.sidebar.file_uploader("Choose an audio file", type=["wav", "mp3", "m4a", "ogg", "flac"])
 
     if uploaded_file:
-        # Ask the user if the audio is a conversation or dialogue
+        st.write(
+            "Please select the type of audio content. If you select 'Dialogue', the system will attempt to identify different speakers and format the transcribed text as a dialogue. If you select 'Single Person', the system will process the text accordingly without generating dialogue."
+        )
+        
         conversation_type = st.radio(
             "Is this audio a dialogue?",
             ("Single Person", "Dialogue")
@@ -119,6 +122,9 @@ def main():
         st.write(transcribed_text)
 
         if conversation_type == "Dialogue" and st.button("Generate Dialogue"):
+            st.write(
+                "Generating dialogue will format the transcribed text into a dialogue format with speaker labels, which is useful for conversations involving multiple speakers."
+            )
             with st.spinner("Generating dialogue..."):
                 dialogue_text = generate_dialogue_text(transcribed_text)
             st.subheader("Generated Dialogue")
