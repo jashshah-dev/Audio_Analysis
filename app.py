@@ -20,30 +20,42 @@ def prepare_voice_file(file) -> io.BytesIO:
     file_format = os.path.splitext(file.name)[1][1:]
     wav_file = io.BytesIO()
 
-    if file_format in ('mp3', 'm4a', 'ogg', 'flac'):
-        audio_file = AudioSegment.from_file(file, format=file_format)
-        audio_file.export(wav_file, format='wav')
-        wav_file.seek(0)  # Reset file pointer to the beginning
-    elif file_format == 'wav':
-        wav_file.write(file.read())
-        wav_file.seek(0)  # Reset file pointer to the beginning
-    else:
-        raise ValueError(f'Unsupported audio format: {file_format}')
-    
+    try:
+        if file_format in ('mp3', 'm4a', 'ogg', 'flac'):
+            audio_file = AudioSegment.from_file(file, format=file_format)
+            audio_file.export(wav_file, format='wav')
+            wav_file.seek(0)  # Reset file pointer to the beginning
+        elif file_format == 'wav':
+            wav_file.write(file.read())
+            wav_file.seek(0)  # Reset file pointer to the beginning
+        else:
+            raise ValueError(f'Unsupported audio format: {file_format}')
+    except Exception as e:
+        st.error(f"An error occurred while processing the audio file: {e}")
+        return None
+
     return wav_file
 
 # Function to transcribe audio
-def transcribe_audio(audio_data, language) -> str:
+def transcribe_audio(audio_data, language='en-US') -> str:
     r = sr.Recognizer()
-    text = r.recognize_google(audio_data, language=language)
-    return text
+    try:
+        text = r.recognize_google(audio_data, language=language)
+        return text
+    except sr.UnknownValueError:
+        return "Could not understand the audio."
+    except sr.RequestError as e:
+        return f"Could not request results from Google Speech Recognition service; {e}"
 
 # Function to perform speech-to-text transcription
 def speech_to_text(file) -> str:
     wav_file = prepare_voice_file(file)
+    if wav_file is None:
+        return "Failed to process the audio file."
+    
     with sr.AudioFile(wav_file) as source:
         audio_data = sr.Recognizer().record(source)
-        text = transcribe_audio(audio_data, language='en-US')
+        text = transcribe_audio(audio_data)
         return text
 
 # Function to analyze text with Google Gemini
@@ -81,7 +93,7 @@ def main():
         st.subheader("Transcribed Text")
         st.write(transcribed_text)
 
-        if st.button("Perform Sentiment Analysis"):
+        if st.button("Perform Sentiment Analysis") and "Could not" not in transcribed_text:
             st.write("Analyzing the text...")
             result = analyze_text_with_gemini(transcribed_text)
             st.subheader("Analysis Results")
