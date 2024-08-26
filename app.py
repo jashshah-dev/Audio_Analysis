@@ -36,6 +36,28 @@ def prepare_voice_file(file) -> io.BytesIO:
 
     return wav_file
 
+# Function to transcribe audio in chunks
+def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
+    audio = AudioSegment.from_file(audio_file)
+    total_length = len(audio)
+    transcribed_text = ""
+
+    for start_time in range(0, total_length, chunk_length_ms):
+        end_time = min(start_time + chunk_length_ms, total_length)
+        chunk = audio[start_time:end_time]
+
+        with io.BytesIO() as chunk_file:
+            chunk.export(chunk_file, format='wav')
+            chunk_file.seek(0)
+            with sr.AudioFile(chunk_file) as source:
+                audio_data = sr.Recognizer().record(source)
+                chunk_text = transcribe_audio(audio_data)
+                transcribed_text += chunk_text + " "
+
+        st.write(f"Processed chunk from {start_time / 1000} to {end_time / 1000} seconds")
+
+    return transcribed_text.strip()
+
 # Function to transcribe audio
 def transcribe_audio(audio_data, language='en-US') -> str:
     r = sr.Recognizer()
@@ -46,17 +68,6 @@ def transcribe_audio(audio_data, language='en-US') -> str:
         return "Could not understand the audio."
     except sr.RequestError as e:
         return f"Could not request results from Google Speech Recognition service; {e}"
-
-# Function to perform speech-to-text transcription
-def speech_to_text(file) -> str:
-    wav_file = prepare_voice_file(file)
-    if wav_file is None:
-        return "Failed to process the audio file."
-    
-    with sr.AudioFile(wav_file) as source:
-        audio_data = sr.Recognizer().record(source)
-        text = transcribe_audio(audio_data)
-        return text
 
 # Function to analyze text with Google Gemini
 def analyze_text_with_gemini(input_text):
@@ -80,7 +91,7 @@ def analyze_text_with_gemini(input_text):
     response = gemini_model.generate_content(prompt)
     return response.text
 
-# Function to identify speaker and generate dialogue
+# Function to generate dialogue from text
 def generate_dialogue_text(input_text):
     prompt = f"""
     You are a sophisticated AI with advanced natural language understanding capabilities. I need you to analyze the following text and generate a dialogue-type text from it. 
@@ -99,42 +110,110 @@ def generate_dialogue_text(input_text):
     response = gemini_model.generate_content(prompt)
     return response.text
 
+# Function to identify speakers
+def identify_speakers(input_text):
+    prompt = f"""
+    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to analyze the following text and identify the number of speakers involved in the conversation.
+
+    Here is the text to analyze:
+
+    {input_text}
+
+    Please provide your response in the following format:
+    - **Number of Speakers**: [Insert number]
+    - **Explanation**: [Brief explanation of how you determined this]
+    """
+    response = gemini_model.generate_content(prompt)
+    return response.text
+
+# Function to extract number of speakers from Gemini response
+def extract_num_speakers(speakers_info):
+    try:
+        num_speakers = int(speakers_info.split("Number of Speakers**: ")[1].split("\n")[0])
+    except:
+        num_speakers = 1  # Default to 1 if parsing fails
+    return num_speakers
+
+# Function to summarize text with Google Gemini
+def summarize_text(input_text):
+    prompt = f"""
+    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to summarize the following text in 80-100 words.
+
+    Here is the text to summarize:
+
+    {input_text}
+
+    Please provide a concise summary.
+    """
+    response = gemini_model.generate_content(prompt)
+    return response.text
+
 # Streamlit app
 def main():
-    st.title("Audio Transcription and Dialogue Generation")
+    st.set_page_config(page_title="Audio Transcription & Analysis", layout="wide")
+
+    st.title("🔍 Audio Transcription & Analysis Tool")
+    st.markdown("""
+    Welcome to the **Audio Transcription & Analysis Tool**! 
+
+    This application allows you to:
+    - **Transcribe** audio files into text.
+    - **Summarize** the transcribed text.
+    - **Identify speakers** and generate dialogues from conversations.
+    - **Perform sentiment analysis** on the transcribed text.
+
+    Upload your audio file using the sidebar and follow the instructions to analyze it.
+    """)
 
     st.sidebar.header("Upload Audio File")
     uploaded_file = st.sidebar.file_uploader("Choose an audio file", type=["wav", "mp3", "m4a", "ogg", "flac"])
 
-    if uploaded_file:
-        st.write(
-            "Please select the type of audio content. If you select 'Dialogue', the system will attempt to identify different speakers and format the transcribed text as a dialogue. If you select 'Single Person', the system will process the text accordingly without generating dialogue."
-        )
+    if 'transcribed_text' not in st.session_state:
+        st.session_state.transcribed_text = None
+
+    if uploaded_file and st.session_state.transcribed_text is None:
+        st.write("Transcribing the audio file might take some time. We will split the file into chunks to manage large files efficiently.")
         
-        conversation_type = st.radio(
-            "Is this audio a dialogue?",
-            ("Single Person", "Dialogue")
-        )
-
         with st.spinner("Transcribing the audio file..."):
-            transcribed_text = speech_to_text(uploaded_file)
+            st.session_state.transcribed_text = transcribe_chunks(uploaded_file)
+
+    if st.session_state.transcribed_text is not None:
         st.subheader("Transcribed Text")
-        st.write(transcribed_text)
+        st.write(st.session_state.transcribed_text)
 
-        if conversation_type == "Dialogue" and st.button("Generate Dialogue"):
-            st.write(
-                "Generating dialogue will format the transcribed text into a dialogue format with speaker labels, which is useful for conversations involving multiple speakers."
-            )
-            with st.spinner("Generating dialogue..."):
-                dialogue_text = generate_dialogue_text(transcribed_text)
-            st.subheader("Generated Dialogue")
-            st.write(dialogue_text)
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("Summarize Text"):
+                with st.spinner("Summarizing the text..."):
+                    summary_text = summarize_text(st.session_state.transcribed_text)
+                st.subheader("Summary")
+                st.write(summary_text)
 
-        if st.button("Perform Sentiment Analysis") and "Could not" not in transcribed_text:
-            with st.spinner("Analyzing the text..."):
-                result = analyze_text_with_gemini(transcribed_text)
-            st.subheader("Analysis Results")
-            st.write(result)
+        with col2:
+            if st.button("Identify Speakers"):
+                with st.spinner("Identifying speakers..."):
+                    speakers_info = identify_speakers(st.session_state.transcribed_text)
+                st.subheader("Speaker Information")
+                st.write(speakers_info)
+
+                num_speakers = extract_num_speakers(speakers_info)
+                if num_speakers > 1:
+                    st.write("This appears to be a dialogue.")
+                    if st.button("Generate Dialogue"):
+                        with st.spinner("Generating dialogue..."):
+                            dialogue_text = generate_dialogue_text(st.session_state.transcribed_text)
+                        st.subheader("Generated Dialogue")
+                        st.write(dialogue_text)
+                else:
+                    st.write("This appears to be a monologue.")
+
+        with col3:
+            if st.button("Perform Sentiment Analysis"):
+                with st.spinner("Analyzing the text..."):
+                    result = analyze_text_with_gemini(st.session_state.transcribed_text)
+                st.subheader("Analysis Results")
+                st.write(result)
 
 if __name__ == "__main__":
     main()
