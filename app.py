@@ -5,6 +5,7 @@ from pydub import AudioSegment
 import io
 import google.generativeai as genai
 from dotenv import load_dotenv
+import concurrent.futures  # For parallel processing
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +24,7 @@ def prepare_voice_file(file) -> io.BytesIO:
     try:
         if file_format in ('mp3', 'm4a', 'ogg', 'flac'):
             audio_file = AudioSegment.from_file(file, format=file_format)
+            audio_file = audio_file.set_frame_rate(16000)  # Reduce sample rate
             audio_file.export(wav_file, format='wav')
             wav_file.seek(0)  # Reset file pointer to the beginning
         elif file_format == 'wav':
@@ -36,25 +38,33 @@ def prepare_voice_file(file) -> io.BytesIO:
 
     return wav_file
 
+# Function to transcribe audio chunk
+def transcribe_audio_chunk(chunk_file):
+    with sr.AudioFile(chunk_file) as source:
+        audio_data = sr.Recognizer().record(source)
+        return transcribe_audio(audio_data)
+
 # Function to transcribe audio in chunks
 def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
     audio = AudioSegment.from_file(audio_file)
     total_length = len(audio)
     transcribed_text = ""
 
-    for start_time in range(0, total_length, chunk_length_ms):
-        end_time = min(start_time + chunk_length_ms, total_length)
-        chunk = audio[start_time:end_time]
+    # Use concurrent futures for parallel processing
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for start_time in range(0, total_length, chunk_length_ms):
+            end_time = min(start_time + chunk_length_ms, total_length)
+            chunk = audio[start_time:end_time]
 
-        with io.BytesIO() as chunk_file:
-            chunk.export(chunk_file, format='wav')
-            chunk_file.seek(0)
-            with sr.AudioFile(chunk_file) as source:
-                audio_data = sr.Recognizer().record(source)
-                chunk_text = transcribe_audio(audio_data)
-                transcribed_text += chunk_text + " "
+            with io.BytesIO() as chunk_file:
+                chunk.export(chunk_file, format='wav')
+                chunk_file.seek(0)
+                futures.append(executor.submit(transcribe_audio_chunk, chunk_file))
 
-        st.write(f"Processed chunk from {start_time / 1000} to {end_time / 1000} seconds")
+        # Collect results from futures
+        for future in concurrent.futures.as_completed(futures):
+            transcribed_text += future.result() + " "
 
     return transcribed_text.strip()
 
