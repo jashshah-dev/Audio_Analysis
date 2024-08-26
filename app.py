@@ -50,6 +50,11 @@ def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
     total_length = len(audio)
     transcribed_text = ""
 
+    # Initialize Streamlit progress bar
+    progress_bar = st.progress(0)
+    chunk_count = (total_length // chunk_length_ms) + 1
+    current_chunk = 0
+
     # Use concurrent futures for parallel processing
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
@@ -62,9 +67,17 @@ def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
                 chunk_file.seek(0)
                 futures.append(executor.submit(transcribe_audio_chunk, chunk_file))
 
+            # Update progress bar based on elapsed time
+            elapsed_time = end_time / 1000  # Convert milliseconds to seconds
+            progress = elapsed_time / (total_length / 1000)  # Convert total_length to seconds
+            progress_bar.progress(progress)
+
         # Collect results from futures
         for future in concurrent.futures.as_completed(futures):
             transcribed_text += future.result() + " "
+
+    # Complete progress bar
+    progress_bar.progress(1.0)
 
     return transcribed_text.strip()
 
