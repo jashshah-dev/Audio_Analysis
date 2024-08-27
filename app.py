@@ -62,10 +62,11 @@ def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
             end_time = min(start_time + chunk_length_ms, total_length)
             chunk = audio[start_time:end_time]
 
-            with io.BytesIO() as chunk_file:
-                chunk.export(chunk_file, format='wav')
-                chunk_file.seek(0)
-                futures.append(executor.submit(transcribe_audio_chunk, chunk_file))
+            # Manually manage the BytesIO object
+            chunk_file = io.BytesIO()
+            chunk.export(chunk_file, format='wav')
+            chunk_file.seek(0)  # Reset the pointer to the beginning of the file
+            futures.append(executor.submit(transcribe_audio_chunk, chunk_file))
 
             # Update progress bar based on elapsed time
             elapsed_time = end_time / 1000  # Convert milliseconds to seconds
@@ -193,6 +194,12 @@ def main():
 
     if 'transcribed_text' not in st.session_state:
         st.session_state.transcribed_text = None
+    if 'summary_text' not in st.session_state:
+        st.session_state.summary_text = None
+    if 'speakers_info' not in st.session_state:
+        st.session_state.speakers_info = None
+    if 'sentiment_analysis' not in st.session_state:
+        st.session_state.sentiment_analysis = None
 
     if uploaded_file and st.session_state.transcribed_text is None:
         st.write("Transcribing the audio file might take some time. We will split the file into chunks to manage large files efficiently.")
@@ -209,18 +216,20 @@ def main():
         with col1:
             if st.button("Summarize Text"):
                 with st.spinner("Summarizing the text..."):
-                    summary_text = summarize_text(st.session_state.transcribed_text)
+                    st.session_state.summary_text = summarize_text(st.session_state.transcribed_text)
+            if st.session_state.summary_text:
                 st.subheader("Summary")
-                st.write(summary_text)
+                st.write(st.session_state.summary_text)
 
         with col2:
             if st.button("Identify Speakers"):
                 with st.spinner("Identifying speakers..."):
-                    speakers_info = identify_speakers(st.session_state.transcribed_text)
+                    st.session_state.speakers_info = identify_speakers(st.session_state.transcribed_text)
+            if st.session_state.speakers_info:
                 st.subheader("Speaker Information")
-                st.write(speakers_info)
+                st.write(st.session_state.speakers_info)
 
-                num_speakers = extract_num_speakers(speakers_info)
+                num_speakers = extract_num_speakers(st.session_state.speakers_info)
                 if num_speakers > 1:
                     st.write("This appears to be a dialogue.")
                     if st.button("Generate Dialogue"):
@@ -234,9 +243,10 @@ def main():
         with col3:
             if st.button("Perform Sentiment Analysis"):
                 with st.spinner("Analyzing the text..."):
-                    result = analyze_text_with_gemini(st.session_state.transcribed_text)
+                    st.session_state.sentiment_analysis = analyze_text_with_gemini(st.session_state.transcribed_text)
+            if st.session_state.sentiment_analysis:
                 st.subheader("Analysis Results")
-                st.write(result)
+                st.write(st.session_state.sentiment_analysis)
 
 if __name__ == "__main__":
     main()
