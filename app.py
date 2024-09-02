@@ -1,252 +1,124 @@
 import streamlit as st
-import os
-import speech_recognition as sr
 from pydub import AudioSegment
-import io
+import tempfile
+import os
 import google.generativeai as genai
 from dotenv import load_dotenv
-import concurrent.futures  # For parallel processing
 
-# Load environment variables
 load_dotenv()
 
-# Configure the Google Gemini API
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# Configure Google API for audio processing
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=GOOGLE_API_KEY)
 
-# Initialize the Gemini model
-gemini_model = genai.GenerativeModel('gemini-pro')
+def transcribe_audio(audio_file_path):
+    """Transcribe the audio using Google's Generative AI."""
+    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    audio_file = genai.upload_file(path=audio_file_path)
+    response = model.generate_content(
+        [
+            "Transcribe this dialogue in the format of timecode, speaker, caption. Use speaker A, speaker B, etc. to identify speakers. If the speaker continues, just continue with the timestamp and do not show different timestamps. Output it in a pretty dialogue format.",
+            audio_file
+        ]
+    )
+    return response.text
 
-# Function to prepare audio file from BytesIO object
-def prepare_voice_file(file) -> io.BytesIO:
-    file_format = os.path.splitext(file.name)[1][1:]
-    wav_file = io.BytesIO()
+def summarize_audio(audio_file_path):
+    """Summarize the audio using Google's Generative AI."""
+    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    audio_file = genai.upload_file(path=audio_file_path)
+    response = model.generate_content(
+        [
+            "Summarize the audio using Google's Generative API.",
+            audio_file
+        ]
+    )
+    return response.text
 
+def analyze_entities_and_sentiment(audio_file_path):
+    """Analyze entities and sentiment in the audio using Google's Generative AI."""
+    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    audio_file = genai.upload_file(path=audio_file_path)
+    response = model.generate_content(
+        [
+            "Please identify the main entities mentioned in this audio and provide a sentiment analysis with polarity scores for each entity. Format the output as a list of entities with their associated sentiment and polarity score.The polarity score must not be a range and it should be a precise value.Since this is a healthcare domain audio we need to focus more on parts where the healthcare representative talks and the way care was given and also focus on when the customer talks about the healthcare reviews to give a proper overall sentiment of the care provided",
+            audio_file
+        ]
+    )
+    return response.text
+
+def identify_speakers(audio_file_path):
+    """Identify speakers in the audio using Google's Generative AI."""
+    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    audio_file = genai.upload_file(path=audio_file_path)
+    response = model.generate_content(
+        [
+            "Please identify the speakers in the following audio.",
+            audio_file
+        ]
+    )
+    return response.text
+
+def save_uploaded_file(uploaded_file):
+    """Save uploaded file to a temporary file and return the path."""
     try:
-        if file_format in ('mp3', 'm4a', 'ogg', 'flac'):
-            audio_file = AudioSegment.from_file(file, format=file_format)
-            audio_file = audio_file.set_frame_rate(16000)  # Reduce sample rate
-            audio_file.export(wav_file, format='wav')
-            wav_file.seek(0)  # Reset file pointer to the beginning
-        elif file_format == 'wav':
-            wav_file.write(file.read())
-            wav_file.seek(0)  # Reset file pointer to the beginning
-        else:
-            raise ValueError(f'Unsupported audio format: {file_format}')
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.' + uploaded_file.name.split('.')[-1]) as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            return tmp_file.name
     except Exception as e:
-        st.error(f"An error occurred while processing the audio file: {e}")
+        st.error(f"Error handling uploaded file: {e}")
         return None
 
-    return wav_file
+# Streamlit app interface
+st.set_page_config(page_title="Audio Analysis App", layout="wide")
 
-# Function to transcribe audio chunk
-def transcribe_audio_chunk(chunk_file):
-    with sr.AudioFile(chunk_file) as source:
-        audio_data = sr.Recognizer().record(source)
-        return transcribe_audio(audio_data)
+st.title('🎙️ Audio Analysis App')
 
-# Function to transcribe audio in chunks
-def transcribe_chunks(audio_file, chunk_length_ms=60000) -> str:
-    audio = AudioSegment.from_file(audio_file)
-    total_length = len(audio)
-    transcribed_text = ""
-
-    # Initialize Streamlit progress bar
-    progress_bar = st.progress(0)
-    chunk_count = (total_length // chunk_length_ms) + 1
-    current_chunk = 0
-
-    # Use concurrent futures for parallel processing
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = []
-        for start_time in range(0, total_length, chunk_length_ms):
-            end_time = min(start_time + chunk_length_ms, total_length)
-            chunk = audio[start_time:end_time]
-
-            # Manually manage the BytesIO object
-            chunk_file = io.BytesIO()
-            chunk.export(chunk_file, format='wav')
-            chunk_file.seek(0)  # Reset the pointer to the beginning of the file
-            futures.append(executor.submit(transcribe_audio_chunk, chunk_file))
-
-            # Update progress bar based on elapsed time
-            elapsed_time = end_time / 1000  # Convert milliseconds to seconds
-            progress = elapsed_time / (total_length / 1000)  # Convert total_length to seconds
-            progress_bar.progress(progress)
-
-        # Collect results from futures
-        for future in concurrent.futures.as_completed(futures):
-            transcribed_text += future.result() + " "
-
-    # Complete progress bar
-    progress_bar.progress(1.0)
-
-    return transcribed_text.strip()
-
-# Function to transcribe audio
-def transcribe_audio(audio_data, language='en-US') -> str:
-    r = sr.Recognizer()
-    try:
-        text = r.recognize_google(audio_data, language=language)
-        return text
-    except sr.UnknownValueError:
-        return "Could not understand the audio."
-    except sr.RequestError as e:
-        return f"Could not request results from Google Speech Recognition service; {e}"
-
-# Function to analyze text with Google Gemini
-def analyze_text_with_gemini(input_text):
-    prompt = f"""
-    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to analyze the following text for two main tasks:
-
-    1. **Entity Recognition**: Identify and list all entities mentioned in the text. Entities can include people, organizations, locations, products, or any specific terms relevant to the context.
-
-    2. **Sentiment Analysis**: Analyze the sentiment expressed in the text. Provide a general sentiment overview and, if possible, identify sentiments related to specific entities or components mentioned.
-
-    Here is the text to analyze:
-
-    {input_text}
-
-    Please format your response as follows:
-
-    - **Entities Identified**: List of entities with their types.
-    - **Sentiment Overview**: General sentiment expressed in the text.
-    - **Entity-Specific Sentiments**: If applicable, sentiment related to each identified entity.
-    """
-    response = gemini_model.generate_content(prompt)
-    return response.text
-
-# Function to generate dialogue from text
-def generate_dialogue_text(input_text):
-    prompt = f"""
-    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to analyze the following text and generate a dialogue-type text from it. 
-
-    1. **Speaker Identification**: Identify the people involved in the conversation and label their dialogue appropriately.
-    2. **Dialogue Generation**: Create a dialogue format from the transcribed text.
-
-    Here is the text to analyze:
-
-    {input_text}
-
-    Please format your response as follows:
-
-    - **Dialogue**: Provide a dialogue-type text with speaker labels.
-    """
-    response = gemini_model.generate_content(prompt)
-    return response.text
-
-# Function to identify speakers
-def identify_speakers(input_text):
-    prompt = f"""
-    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to analyze the following text and identify the number of speakers involved in the conversation.
-
-    Here is the text to analyze:
-
-    {input_text}
-
-    Please provide your response in the following format:
-    - **Number of Speakers**: [Insert number]
-    - **Explanation**: [Brief explanation of how you determined this]
-    """
-    response = gemini_model.generate_content(prompt)
-    return response.text
-
-# Function to extract number of speakers from Gemini response
-def extract_num_speakers(speakers_info):
-    try:
-        num_speakers = int(speakers_info.split("Number of Speakers**: ")[1].split("\n")[0])
-    except:
-        num_speakers = 1  # Default to 1 if parsing fails
-    return num_speakers
-
-# Function to summarize text with Google Gemini
-def summarize_text(input_text):
-    prompt = f"""
-    You are a sophisticated AI with advanced natural language understanding capabilities. I need you to summarize the following text in 80-100 words.
-
-    Here is the text to summarize:
-
-    {input_text}
-
-    Please provide a concise summary.
-    """
-    response = gemini_model.generate_content(prompt)
-    return response.text
-
-# Streamlit app
-def main():
-    st.set_page_config(page_title="Audio Transcription & Analysis", layout="wide")
-
-    st.title("🔍 Audio Transcription & Analysis Tool")
-    st.markdown("""
-    Welcome to the **Audio Transcription & Analysis Tool**! 
-
-    This application allows you to:
-    - **Transcribe** audio files into text.
-    - **Summarize** the transcribed text.
-    - **Identify speakers** and generate dialogues from conversations.
-    - **Perform sentiment analysis** on the transcribed text.
-
-    Upload your audio file using the sidebar and follow the instructions to analyze it.
+with st.expander("ℹ️ About this app"):
+    st.write("""
+        This advanced audio analysis app utilizes Google's Generative AI to provide comprehensive insights into your audio files:
+        
+        1. 📝 **Transcription**: Get a detailed transcript of the dialogue with speaker identification and timestamps.
+        2. 📊 **Summarization**: Receive a concise summary of the main points discussed in the audio.
+        3. 🧠 **Entity and Sentiment Analysis**: Identify key entities mentioned and their associated sentiment with polarity scores.
+        4. 👥 **Speaker Identification**: Recognize distinct speakers in the audio content.
+        
+        Upload your audio file in WAV or MP3 format to unlock these powerful analysis features!
     """)
 
-    st.sidebar.header("Upload Audio File")
-    uploaded_file = st.sidebar.file_uploader("Choose an audio file", type=["wav", "mp3", "m4a", "ogg", "flac"])
+audio_file = st.file_uploader("📤 Upload Audio File", type=['wav', 'mp3'])
 
-    if 'transcribed_text' not in st.session_state:
-        st.session_state.transcribed_text = None
-    if 'summary_text' not in st.session_state:
-        st.session_state.summary_text = None
-    if 'speakers_info' not in st.session_state:
-        st.session_state.speakers_info = None
-    if 'sentiment_analysis' not in st.session_state:
-        st.session_state.sentiment_analysis = None
-
-    if uploaded_file and st.session_state.transcribed_text is None:
-        st.write("Transcribing the audio file might take some time. We will split the file into chunks to manage large files efficiently.")
+if audio_file is not None:
+    audio_path = save_uploaded_file(audio_file)
+    st.audio(audio_path)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button('🎭 Transcribe Audio', use_container_width=True):
+            with st.spinner('Transcribing...'):
+                transcription = transcribe_audio(audio_path)
+                st.subheader('📜 Transcription')
+                st.text_area("", transcription, height=300)
         
-        with st.spinner("Transcribing the audio file..."):
-            st.session_state.transcribed_text = transcribe_chunks(uploaded_file)
-
-    if st.session_state.transcribed_text is not None:
-        st.subheader("Transcribed Text")
-        st.write(st.session_state.transcribed_text)
-
-        col1, col2, col3 = st.columns(3)
+        if st.button('📝 Summarize Audio', use_container_width=True):
+            with st.spinner('Summarizing...'):
+                summary = summarize_audio(audio_path)
+                st.subheader('📋 Summary')
+                st.info(summary)
+    
+    with col2:
+        if st.button('🔍 Analyze Entities & Sentiment', use_container_width=True):
+            with st.spinner('Analyzing...'):
+                analysis = analyze_entities_and_sentiment(audio_path)
+                st.subheader('🧐 Entity & Sentiment Analysis')
+                st.write(analysis)
         
-        with col1:
-            if st.button("Summarize Text"):
-                with st.spinner("Summarizing the text..."):
-                    st.session_state.summary_text = summarize_text(st.session_state.transcribed_text)
-            if st.session_state.summary_text:
-                st.subheader("Summary")
-                st.write(st.session_state.summary_text)
+        if st.button('👥 Identify Speakers', use_container_width=True):
+            with st.spinner('Identifying speakers...'):
+                speaker_info = identify_speakers(audio_path)
+                st.subheader('🎤 Speaker Identification Results')
+                st.write(speaker_info)
 
-        with col2:
-            if st.button("Identify Speakers"):
-                with st.spinner("Identifying speakers..."):
-                    st.session_state.speakers_info = identify_speakers(st.session_state.transcribed_text)
-            if st.session_state.speakers_info:
-                st.subheader("Speaker Information")
-                st.write(st.session_state.speakers_info)
-
-                num_speakers = extract_num_speakers(st.session_state.speakers_info)
-                if num_speakers > 1:
-                    st.write("This appears to be a dialogue.")
-                    if st.button("Generate Dialogue"):
-                        with st.spinner("Generating dialogue..."):
-                            dialogue_text = generate_dialogue_text(st.session_state.transcribed_text)
-                        st.subheader("Generated Dialogue")
-                        st.write(dialogue_text)
-                else:
-                    st.write("This appears to be a monologue.")
-
-        with col3:
-            if st.button("Perform Sentiment Analysis"):
-                with st.spinner("Analyzing the text..."):
-                    st.session_state.sentiment_analysis = analyze_text_with_gemini(st.session_state.transcribed_text)
-            if st.session_state.sentiment_analysis:
-                st.subheader("Analysis Results")
-                st.write(st.session_state.sentiment_analysis)
-
-if __name__ == "__main__":
-    main()
+st.markdown("---")
+st.markdown("Powered by Google's Generative AI 🚀")
