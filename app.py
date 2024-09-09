@@ -15,7 +15,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 def transcribe_audio(audio_file_path: str) -> str:
     """Transcribe the audio using Google's Generative AI."""
-    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    model = genai.GenerativeModel("models/gemini-1.5-flash-001")
     audio_file = genai.upload_file(path=audio_file_path)
     response = model.generate_content(
         [
@@ -27,7 +27,7 @@ def transcribe_audio(audio_file_path: str) -> str:
 
 def summarize_audio(audio_file_path: str) -> str:
     """Summarize the audio using Google's Generative AI."""
-    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    model = genai.GenerativeModel("models/gemini-1.5-flash-001")
     audio_file = genai.upload_file(path=audio_file_path)
     response = model.generate_content(
         [
@@ -39,7 +39,7 @@ def summarize_audio(audio_file_path: str) -> str:
 
 def analyze_entities_and_sentiment(audio_file_path: str) -> str:
     """Analyze entities and sentiment in the audio using Google's Generative AI."""
-    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    model = genai.GenerativeModel("models/gemini-1.5-flash-001")
     audio_file = genai.upload_file(path=audio_file_path)
     response = model.generate_content(
         [
@@ -51,7 +51,7 @@ def analyze_entities_and_sentiment(audio_file_path: str) -> str:
 
 def identify_speakers(audio_file_path: str) -> str:
     """Identify speakers in the audio using Google's Generative AI."""
-    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    model = genai.GenerativeModel("models/gemini-1.5-flash-001")
     audio_file = genai.upload_file(path=audio_file_path)
     response = model.generate_content(
         [
@@ -63,7 +63,7 @@ def identify_speakers(audio_file_path: str) -> str:
 
 def adaptive_sentiment_trend_analyzer(audio_file_path: str, time_window: int, sentiment_threshold: float) -> Dict[str, Any]:
     """Analyze sentiment trends with adaptive time windows and custom thresholds."""
-    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+    model = genai.GenerativeModel("models/gemini-1.5-flash-001")
     audio_file = genai.upload_file(path=audio_file_path)
     
     prompt = f"""
