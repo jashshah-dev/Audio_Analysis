@@ -5,6 +5,9 @@ import os
 import google.generativeai as genai
 from dotenv import load_dotenv
 import plotly.graph_objects as go
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 from typing import List, Dict, Any
 
 load_dotenv()
@@ -98,16 +101,25 @@ def adaptive_sentiment_trend_analyzer(audio_file_path: str, time_window: int, se
             "trigger_points": [
                 {{"timestamp": "00:00", "description": "Describe the trigger point"}},
                 # Add more trigger points as needed
+            ],
+            "heatmap_data": [
+                # Add heatmap data here in the format:
+                # {{"time": "00:00", "score": 0.0}}
             ]
         }}
 
-    Only include the Python function in your response, nothing else.
+    Only include the Python function in your response. Please include nothing else except the function do not start with ```python just start with der.
     """
     
     response = model.generate_content([prompt, audio_file])
+    print(response)
     
     # Extract the Python function from the response
     function_str = response.text.strip()
+    if function_str.startswith('```python'):
+        # Remove the prefix '```python' and any potential leading/trailing whitespace
+        function_str = function_str[len('```python'):].strip()
+        function_str = function_str.strip('```').strip()
     
     # Create a local namespace to execute the function
     local_namespace = {}
@@ -127,6 +139,40 @@ def plot_sentiment_trend(sentiment_data: List[Dict[str, Any]]):
     fig.update_layout(title='Sentiment Trend Over Time',
                       xaxis_title='Timestamp',
                       yaxis_title='Sentiment Score')
+    return fig
+
+def plot_sentiment_heatmap(heatmap_data: List[Dict[str, Any]]):
+    """Create a heatmap of sentiment data."""
+    if not heatmap_data:
+        return None
+    
+    # Convert the heatmap data to a DataFrame
+    df = pd.DataFrame(heatmap_data)
+    
+    # Ensure 'time' column is in datetime format without specifying the format
+    df['time'] = pd.to_datetime(df['time'], errors='coerce')  # Use errors='coerce' to handle invalid parsing
+    
+    # Check if conversion was successful
+    if df['time'].isnull().all():
+        raise ValueError("All time data could not be parsed. Please check the time format.")
+    
+    # Prepare data for heatmap
+    df.set_index('time', inplace=True)
+    df_resampled = df.resample('T').mean().fillna(0)  # Resample by minute and fill missing values
+
+    # Create the heatmap
+    fig = go.Figure(data=go.Heatmap(
+        z=df_resampled.values.T,
+        x=df_resampled.index,
+        y=['Sentiment'],
+        colorscale='Viridis'
+    ))
+    fig.update_layout(
+        xaxis_title='Time',
+        yaxis_title='Sentiment',
+        title='Sentiment Heatmap'
+    )
+    
     return fig
 
 def save_uploaded_file(uploaded_file) -> str:
